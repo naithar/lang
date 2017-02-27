@@ -6,9 +6,10 @@ import Foundation
 extension UnicodeScalar {
     
     var isSpace: Bool {
-        guard UnicodeScalar("\n") != self else {
+        guard UnicodeScalar("\n") != self && UnicodeScalar("\r") != self else {
             return false
         }
+        
         return isspace(Int32(self.value)) != 0
     }
     
@@ -16,7 +17,6 @@ extension UnicodeScalar {
         return isalnum(Int32(self.value)) != 0
     }
 }
-
 
 class Lexer {
     
@@ -83,6 +83,7 @@ class Lexer {
         case dot // .
         case colon // :
         case backtick // `
+        case coma // ,
         case identifier(String)
         
         init?(character value: UnicodeScalar) {
@@ -100,6 +101,8 @@ class Lexer {
                 self = .apostrophe
             } else if value == "`" {
                 self = .backtick
+            } else if value == "," {
+                self = .coma
             } else {
                 return nil
             }
@@ -172,6 +175,10 @@ class Lexer {
     func tokenize() -> [Token] {
         var result = [Token]()
         while let token = self.next() {
+            if case .separator? = result.last,
+                case .separator = token {
+                    continue
+            }
             result.append(token)
         }
         return result
