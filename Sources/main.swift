@@ -6,6 +6,9 @@ import Foundation
 extension UnicodeScalar {
     
     var isSpace: Bool {
+        guard UnicodeScalar("\n") != self else {
+            return false
+        }
         return isspace(Int32(self.value)) != 0
     }
     
