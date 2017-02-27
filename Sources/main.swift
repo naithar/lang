@@ -6,11 +6,7 @@ import Foundation
 extension UnicodeScalar {
     
     var isSpace: Bool {
-        guard UnicodeScalar("\n") != self && UnicodeScalar("\r") != self else {
-            return false
-        }
-        
-        return isspace(Int32(self.value)) != 0
+        return isspace(Int32(self.value)) != 0 && self != "\n"
     }
     
     var isAlphanumeric: Bool {
@@ -20,114 +16,189 @@ extension UnicodeScalar {
 
 class Lexer {
     
-    enum Token {
+    struct Token {
         
-        enum Bracket {
+        struct Location {
+            let file: String?
+            var line: Int
+            var column: Int
+            var location: Int
             
-            enum `Type` {
-                case open
-                case closed
+            init(line: Int, column: Int, file: String? = nil, location: Int = 0) {
+                self.file = file
+                self.line = line
+                self.column = column
+                self.location = 0
             }
             
-            case parentheses(Type) // ()
-            case braces(Type) // {}
-            case brackets(Type) // []
-            case chevrons(Type) // <>
+            static let zero = Location.init(line: 0, column: 0)
+        }
+        
+        struct Range {
+            let start: Location
+            let end: Location
             
-            init?(from value: UnicodeScalar) {
-                switch value {
-                case "(":
-                    self = .parentheses(.open)
-                case ")":
-                    self = .parentheses(.closed)
-                case "{":
-                    self = .braces(.open)
-                case "}":
-                    self = .braces(.closed)
-                case "[":
-                    self = .brackets(.open)
-                case "]":
-                    self = .brackets(.closed)
-                case "<":
-                    self = .chevrons(.open)
-                case ">":
-                    self = .chevrons(.closed)
-                default:
+            static let zero = Range(start: .zero, end: .zero)
+        }
+        
+        enum Kind {
+            
+            enum Bracket {
+                
+                enum `Type` {
+                    case open
+                    case closed
+                }
+                
+                case parentheses(Type) // ()
+                case braces(Type) // {}
+                case brackets(Type) // []
+                case chevrons(Type) // <>
+                
+                init?(from value: UnicodeScalar) {
+                    switch value {
+                    case "(":
+                        self = .parentheses(.open)
+                    case ")":
+                        self = .parentheses(.closed)
+                    case "{":
+                        self = .braces(.open)
+                    case "}":
+                        self = .braces(.closed)
+                    case "[":
+                        self = .brackets(.open)
+                    case "]":
+                        self = .brackets(.closed)
+                    case "<":
+                        self = .chevrons(.open)
+                    case ">":
+                        self = .chevrons(.closed)
+                    default:
+                        return nil
+                    }
+                }
+            }
+            
+            enum Operator: UnicodeScalar {
+                case plus = "+"
+                case minus = "-"
+                case power = "*"
+                case divide = "/"
+                case modulo = "%"
+                case equal = "="
+            }
+            
+            enum Keyword: String {
+                case `func` = "func"
+                case `if` = "if"
+                case `else` = "else"
+                case `return` = "return"
+                case `var` = "var"
+                case `let` = "let"
+                case `switch` = "switch"
+                case `case` = "case"
+                case `default` = "default"
+                case `break` = "break"
+                case `for` = "for"
+                case `continue` = "continue"
+                case `false` = "false"
+                case `true` = "true"
+            }
+            
+            case number(Int)
+            case `operator`(Operator)
+            case bracket(Bracket)
+            case keyword(Keyword)
+            case newline // \n
+            case separator // ;
+            case apostrophe // '
+            case dot // .
+            case colon // :
+            case backtick // `
+            case coma // ,
+            case underscore // _
+            case identifier(String)
+            case eof
+            case question // ?
+            
+            init?(character value: UnicodeScalar) {
+                if let bracket = Bracket(from: value) {
+                    self = .bracket(bracket)
+                } else if let `operator` = Operator(rawValue: value) {
+                    self = .operator(`operator`)
+                } else if value == ";" {
+                    self = .separator
+                } else if value == "\n" {
+                    self = .newline
+                } else if value == "." {
+                    self = .dot
+                } else if value == ":" {
+                    self = .colon
+                } else if value == "'" {
+                    self = .apostrophe
+                } else if value == "`" {
+                    self = .backtick
+                } else if value == "," {
+                    self = .coma
+                } else if value == "_" {
+                    self = .underscore
+                } else if value == "?" {
+                    self = .question
+                } else if value == "\0" {
+                    self = .eof
+                } else {
                     return nil
+                }
+            }
+            
+            init?(string value: String) {
+                guard value.unicodeScalars.count > 0 else { return nil }
+                
+                if let character = Token.Kind.init(character: value.unicodeScalars.first!) {
+                    self = character
+                } else if ["\r\n", "\n", "\r"].contains(value) {
+                    self = .newline
+                } else if let keyword = Keyword(rawValue: value) {
+                    self = .keyword(keyword)
+                } else if let number = Int(value) {
+                    self = .number(number)
+                } else {
+                    self = .identifier(value)
                 }
             }
         }
         
-        enum Operator: UnicodeScalar {
-            case plus = "+"
-            case minus = "-"
-            case power = "*"
-            case divide = "/"
-            case modulo = "%"
-            case equal = "="
+        var kind: Kind
+        var range: Range
+        
+        init(kind: Kind, location: Location) {
+            self.kind = kind
+            self.range = Range(start: location, end: location)
         }
         
-        enum Keyword: String {
-            case `func` = "func"
-            case `if` = "if"
-            case `else` = "else"
-            case `return` = "return"
+        init?(kind: Kind?, location: Location) {
+            guard let kind = kind else { return nil }
+            self.kind = kind
+            self.range = Range(start: location, end: location)
         }
         
-        case number(Int)
-        case `operator`(Operator)
-        case bracket(Bracket)
-        case keyword(Keyword)
-        case separator // ; \n
-        case apostrophe // '
-        case dot // .
-        case colon // :
-        case backtick // `
-        case coma // ,
-        case identifier(String)
-        
-        init?(character value: UnicodeScalar) {
-            if let bracket = Bracket(from: value) {
-                self = .bracket(bracket)
-            } else if let `operator` = Operator(rawValue: value) {
-                self = .operator(`operator`)
-            } else if [";", "\n", "\r"].contains(value) {
-                self = .separator
-            } else if value == "." {
-                self = .dot
-            } else if value == ":" {
-                self = .colon
-            } else if value == "'" {
-                self = .apostrophe
-            } else if value == "`" {
-                self = .backtick
-            } else if value == "," {
-                self = .coma
-            } else {
-                return nil
-            }
+        init(kind: Kind, range: Range) {
+            self.kind = kind
+            self.range = range
         }
         
-        init?(string value: String) {
-            guard value.unicodeScalars.count > 0 else { return nil }
-            
-            if let character = Token.init(character: value.unicodeScalars.first!) {
-                self = character
-            } else if ["\r\n", "\n", "\r"].contains(value) {
-                self = .separator
-            } else if let keyword = Keyword(rawValue: value) {
-                self = .keyword(keyword)
-            } else if let number = Int(value) {
-                self = .number(number)
-            } else {
-                self = .identifier(value)
-            }
+        init?(kind: Kind?, range: Range) {
+            guard let kind = kind else { return nil }
+            self.kind = kind
+            self.range = range
         }
     }
     
     var input: [UnicodeScalar]
     
     private var index = 0
+    
+    private var location: Token.Location = Token.Location(line: 1, column: 1)
     
     init(input: String) {
         self.input = Array(input.unicodeScalars)
@@ -147,26 +218,40 @@ class Lexer {
     }
     
     private func advance(by count: Int = 1) {
-        self.index += count
+        for _ in 0..<count {
+            guard let character = self.currentCharacter else { return }
+            
+            if case .newline? = Token.Kind(character: character) {
+                self.location.line += 1
+                self.location.column = 1
+            } else {
+                self.location.column += 1
+            }
+            self.location.location += 1
+            self.index += 1
+        }
     }
     
     private func next() -> Token? {
+        
+        //advance(while)
         while let character = self.currentCharacter, character.isSpace {
             self.advance()
         }
         
         guard let character = self.currentCharacter else {
-            return nil
+            return Token(kind: .eof, location: self.location)
         }
         
-        if let token = Token(character: character) {
+        if let tokenKind = Token.Kind(character: character) {
             self.advance()
-            return token
+            return Token(kind: tokenKind, location: self.location)
         }
         
+        let start = self.location
         if character.isAlphanumeric {
             let identifier = self.read()
-            return Token(string: identifier)
+            return Token(kind: Token.Kind(string: identifier), range: Token.Range(start: start, end: self.location))
         }
         
         return nil
@@ -175,10 +260,15 @@ class Lexer {
     func tokenize() -> [Token] {
         var result = [Token]()
         while let token = self.next() {
-            if case .separator? = result.last,
-                case .separator = token {
+            if case .eof = token.kind {
+                break
+            }
+            
+            if case .separator? = result.last?.kind,
+                case .separator = token.kind {
                     continue
             }
+            
             result.append(token)
         }
         return result
