@@ -32,6 +32,7 @@ class Lexer {
             case parentheses(Type) // ()
             case braces(Type) // {}
             case brackets(Type) // []
+            case chevrons(Type) // <>
             
             init?(from value: UnicodeScalar) {
                 switch value {
@@ -47,6 +48,10 @@ class Lexer {
                     self = .brackets(.open)
                 case "]":
                     self = .brackets(.closed)
+                case "<":
+                    self = .chevrons(.open)
+                case ">":
+                    self = .chevrons(.closed)
                 default:
                     return nil
                 }
@@ -77,6 +82,7 @@ class Lexer {
         case apostrophe // '
         case dot // .
         case colon // :
+        case backtick // `
         case identifier(String)
         
         init?(character value: UnicodeScalar) {
@@ -92,6 +98,8 @@ class Lexer {
                 self = .colon
             } else if value == "'" {
                 self = .apostrophe
+            } else if value == "`" {
+                self = .backtick
             } else {
                 return nil
             }
